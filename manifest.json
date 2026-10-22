@@ -1,0 +1,12 @@
+{
+  "name": "酒精濃度估算",
+  "short_name": "酒測估算",
+  "description": "血液酒精濃度與呼氣酒精估算（僅供參考，喝酒不開車）",
+  "lang": "zh-Hant-TW",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6fb",
+  "theme_color": "#3b6ef5",
+  "icons": [{"src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]
+}
