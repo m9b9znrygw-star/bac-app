@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>酒精濃度估算</title>
+<meta name="description" content="血液酒精濃度（BAC）與呼氣酒精估算，僅供參考，喝酒不開車">
+<meta name="theme-color" content="#3b6ef5">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="酒測估算">
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--fg:#1d2433;--mut:#6b7385;--pri:#3b6ef5;--ok:#1a8f3c;--warn:#c77700;--bad:#d33;--bd:#dde2ec}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,"PingFang TC","Noto Sans TC",sans-serif;max-width:480px;margin:0 auto;padding:12px 12px calc(24px + env(safe-area-inset-bottom));background:var(--bg);color:var(--fg);-webkit-text-size-adjust:100%}
+h1{font-size:20px;margin:6px 4px 10px}
+h2{font-size:15px;margin:0 0 8px;color:var(--mut);font-weight:600}
+.card{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+label{display:block;margin:8px 0 4px;font-size:13px;font-weight:600;color:var(--mut)}
+input,select{width:100%;padding:10px;font-size:16px;border:1px solid var(--bd);border-radius:10px;background:#fff;color:var(--fg)}
+.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}
+button{font-size:16px;border:0;border-radius:10px;padding:11px;background:var(--pri);color:#fff;cursor:pointer}
+button.sec{background:#e8edfb;color:var(--pri)}
+button.chip{padding:7px 10px;font-size:14px;background:#eef1f7;color:var(--fg)}
+button.chip.on{background:var(--pri);color:#fff}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.full{width:100%;margin-top:12px}
+.big{font-size:40px;font-weight:800;line-height:1.1}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.stat{background:var(--bg);border-radius:10px;padding:8px 10px}
+.stat b{display:block;font-size:17px}.stat span{font-size:12px;color:var(--mut)}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--bd)}
+li:first-child{border-top:0}
+li .n{flex:1;min-width:0;font-size:14px}
+li .n small{color:var(--mut);display:block}
+li input[type=time]{width:96px;padding:6px;font-size:14px}
+li button{padding:6px 10px;background:#fdecec;color:var(--bad);font-size:14px}
+.empty{color:var(--mut);font-size:14px;text-align:center;padding:8px}
+canvas{width:100%;height:170px;display:block}
+.disc{background:#fff4e5;border:1px solid #ffd59a;color:#7a4b00;border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.6}
+.disc b{font-size:16px;display:block;color:#b45309}
+small.foot{display:block;color:var(--mut);font-size:12px;line-height:1.6;margin-top:8px}
+#custom{display:none}
+</style>
+</head>
+<body>
+<h1>🍺 酒精濃度估算</h1>
+<div class="disc"><b>⚠️ 僅供參考，喝酒不開車</b>估算值與實際酒測可能相差很大，不能作為能否開車的依據。台灣酒駕標準：呼氣 0.15 mg/L（≈ 血液 0.03%）。</div>
+
+<div class="card" style="margin-top:12px">
+<h2>目前估算</h2>
+<div id="cur" class="big ok">0.000 %</div>
+<div id="curBr" style="font-size:15px;margin-top:2px">呼氣約 0.00 mg/L</div>
+<div id="curMsg" style="font-size:14px;margin-top:6px"></div>
+<div class="stats">
+<div class="stat"><span>最高峰值</span><b id="sPeak">–</b></div>
+<div class="stat"><span>降到 0.03%／0.15 mg/L 以下</span><b id="sLegal">–</b></div>
+<div class="stat"><span>代謝至 0（平均）</span><b id="sZero">–</b></div>
+<div class="stat"><span>代謝至 0（保守・代謝慢）</span><b id="sZeroC">–</b></div>
+</div>
+<canvas id="chart" width="900" height="340" aria-label="BAC 變化圖"></canvas>
+</div>
+
+<div class="card">
+<h2>新增一杯</h2>
+<label for="d">酒類</label>
+<select id="d"></select>
+<div id="custom" class="row">
+<div><label for="cml">容量 (ml)</label><input id="cml" type="number" inputmode="decimal" value="330" min="1"></div>
+<div><label for="cabv">酒精度 (%)</label><input id="cabv" type="number" inputmode="decimal" value="5" min="0" max="100" step="0.1"></div>
+</div>
+<div class="row">
+<div><label for="qty">份數</label><input id="qty" type="number" inputmode="decimal" value="1" min="0.25" step="0.25"></div>
+<div><label for="tm">喝的時間</label><input id="tm" type="time"></div>
+</div>
+<div class="chips" id="ago">
+<button class="chip on" data-m="0">現在</button><button class="chip" data-m="15">15 分前</button><button class="chip" data-m="30">30 分前</button><button class="chip" data-m="60">1 小時前</button><button class="chip" data-m="120">2 小時前</button><button class="chip" data-m="180">3 小時前</button>
+</div>
+<button id="add" class="full">＋ 加入紀錄</button>
+</div>
+
+<div class="card">
+<h2>今天喝了</h2>
+<ul id="log"></ul>
+<button id="clear" class="sec full" style="display:none">清除全部紀錄</button>
+</div>
+
+<div class="card">
+<h2>個人資料</h2>
+<div class="row">
+<div><label for="s">性別</label><select id="s"><option value="m">男</option><option value="f">女</option></select></div>
+<div><label for="a">年齡</label><input id="a" type="number" inputmode="numeric" value="30" min="18" max="100"></div>
+</div>
+<div class="row">
+<div><label for="ht">身高 (cm)</label><input id="ht" type="number" inputmode="decimal" value="170" min="120" max="230"></div>
+<div><label for="w">體重 (kg)</label><input id="w" type="number" inputmode="decimal" value="70" min="30" max="250"></div>
+</div>
+<label for="f">胃部狀態</label>
+<select id="f"><option value="0.5">空腹（約 0.5 小時吸收完）</option><option value="1.5" selected>有吃東西（約 1.5 小時吸收完）</option></select>
+<div id="tbw" style="font-size:13px;color:var(--mut);margin-top:8px"></div>
+</div>
+
+<small class="foot">算法：Watson 公式估算身體含水量，Widmark 法換算血液酒精濃度（血液含水 80.6%）；每杯酒以線性吸收（空腹 0.5 小時／飽食 1.5 小時），自第一杯起以每小時 0.015% 代謝，「保守」以每小時 0.010% 計算；濃度不會低於 0。呼氣酒精 mg/L ≈ BAC% × 5。個人體質、藥物、肝功能、飲酒速度都會造成很大差異。紀錄只存在本機，24 小時前的紀錄自動清除。<br><b>僅供參考，喝酒不開車。</b>找代駕或搭大眾運輸。</small>
+
+<script id="bac-core">
+/* ===== 計算核心（tests.js 會直接抽出這段測試）===== */
+var BAC = (function(){
+  var ETH = 0.789;            // g/ml
+  var BLOOD_WATER = 0.806;
+  var BETA = 0.015, BETA_SLOW = 0.010;   // %/h
+  var LIMIT = 0.03;           // % (= 0.15 mg/L breath)
+  var H = 3600000;
+  function num(x){ x = +x; return isFinite(x) ? x : NaN; }
+  // Watson TBW (L); returns NaN for invalid input
+  function tbw(p){
+    var age=num(p.age), ht=num(p.height), w=num(p.weight);
+    if(!(ht>0) || !(w>0) || (p.sex!=='f' && !(age>=0))) return NaN;
+    var v = p.sex==='f' ? -2.097 + 0.1069*ht + 0.2466*w
+                        : 2.447 - 0.09516*age + 0.1074*ht + 0.3362*w;
+    return v>0 ? v : NaN;
+  }
+  function grams(d){ var ml=num(d.ml), abv=num(d.abv), q=d.qty==null?1:num(d.qty);
+    if(!(ml>0)||!(abv>0)||!(q>0)) return 0; return ml*q*abv/100*ETH; }
+  // BAC% contributed by fully absorbed grams
+  function pct(g, T){ return g*BLOOD_WATER/(T*10); }
+  // fraction of a drink absorbed by time t (ms)
+  function absorbed(d, t, tabsH){
+    var dt=(t-d.time)/H; if(dt<=0) return 0;
+    return tabsH>0 ? Math.min(1, dt/tabsH) : 1;
+  }
+  /* Simulate from first drink. Returns {series:[{t,bac}], at(t), peak, peakTime, zeroTime, legalTime}
+     Elimination only acts while BAC>0 (no "negative debt" carried between drinks). */
+  function simulate(profile, drinks, opts){
+    opts = opts||{};
+    var beta = opts.beta||BETA, stepMin = opts.stepMin||1, tabs = num(profile.tabs);
+    if(!(tabs>=0)) tabs = 1.5;
+    var T = tbw(profile);
+    var ds = (drinks||[]).filter(function(d){ return grams(d)>0 && isFinite(d.time); })
+                         .sort(function(a,b){return a.time-b.time;});
+    var res = {valid: isFinite(T), series:[], peak:0, peakTime:null, zeroTime:null, legalTime:null, tbw:T};
+    if(!res.valid || !ds.length) { res.at=function(){return 0;}; return res; }
+    var tot = ds.map(function(d){ return pct(grams(d), T); });
+    function cum(t){ var s=0; for(var i=0;i<ds.length;i++) s+=tot[i]*absorbed(ds[i],t,tabs); return s; }
+    var lastAbs = ds[ds.length-1].time + tabs*H;
+    var t0 = ds[0].time, step = stepMin*60000, b = 0, t = t0, prevCum = 0;
+    var maxT = t0 + 7*24*H;
+    res.series.push({t:t0,bac:0});
+    var aboveLimit = false;
+    while(t < maxT){
+      var nt = t+step, c = cum(nt);
+      b = Math.max(0, b + (c-prevCum) - beta*step/H);
+      prevCum = c; t = nt;
+      res.series.push({t:t,bac:b});
+      if(b>res.peak){ res.peak=b; res.peakTime=t; }
+      if(b>=LIMIT) aboveLimit = true;
+      if(t>=lastAbs && b<=0){ break; }
+    }
+    // zero time = first time after all absorption finished at which bac==0
+    res.zeroTime = t;
+    // legal time: last moment bac drops below LIMIT (null if never above)
+    if(aboveLimit){
+      for(var i=res.series.length-1;i>0;i--){
+        if(res.series[i-1].bac>=LIMIT){ res.legalTime=res.series[i].t; break; }
+      }
+    }
+    res.at = function(q){
+      var s=res.series; if(!s.length||q<=s[0].t||q>=s[s.length-1].t) return 0;
+      var k=Math.min(s.length-1, Math.floor((q-s[0].t)/step)), a=s[k], z=s[Math.min(k+1,s.length-1)];
+      if(z.t===a.t) return a.bac; return a.bac+(z.bac-a.bac)*(q-a.t)/(z.t-a.t);
+    };
+    return res;
+  }
+  function report(profile, drinks, now){
+    var avg = simulate(profile, drinks, {beta:BETA}), slow = simulate(profile, drinks, {beta:BETA_SLOW});
+    var cur = avg.at(now);
+    function left(t){ return (t==null||t<=now) ? 0 : (t-now)/H; }
+    return { valid:avg.valid, tbw:avg.tbw, bac:cur, breath:cur*5, peak:avg.peak, peakTime:avg.peakTime,
+      hoursToZero: avg.series.length? left(avg.zeroTime):0,
+      hoursToZeroSlow: slow.series.length? left(slow.zeroTime):0,
+      hoursToLegal: left(avg.legalTime), hoursToLegalSlow: left(slow.legalTime),
+      avg:avg, slow:slow };
+  }
+  return {tbw:tbw, grams:grams, simulate:simulate, report:report, BETA:BETA, BETA_SLOW:BETA_SLOW, LIMIT:LIMIT};
+})();
+if(typeof module!=='undefined') module.exports = BAC;
+</script>
+
+<script>
+(function(){
+var PRESETS = [
+ ['啤酒',[
+  ['台灣啤酒 經典 罐 330ml',330,4.5],['台灣啤酒 經典 罐 500ml',500,4.5],['台灣啤酒 經典 瓶 600ml',600,4.5],
+  ['金牌台灣啤酒 罐 330ml',330,5],['金牌台灣啤酒 瓶 600ml',600,5],
+  ['台啤水果啤酒 330ml',330,2.8],
+  ['進口啤酒（海尼根等）330ml',330,5],['進口啤酒 500ml',500,5]]],
+ ['烈酒',[
+  ['金門高粱 58度 一小杯 30ml',30,58],['金門高粱 38度 一小杯 30ml',30,38],
+  ['威士忌 一杯 30ml 40%',30,40],['威士忌 一杯 45ml 40%',45,40]]],
+ ['米酒／紹興／藥酒',[
+  ['紅標料理米酒 一小杯 50ml 19.5%',50,19.5],['紹興酒 一杯 100ml 13%',100,13],
+  ['保力達B 一杯 50ml 10%',50,10],['保力達B 整瓶 600ml 10%',600,10],
+  ['維士比 一杯 50ml 10%',50,10],['維士比 整瓶 600ml 10%',600,10]]],
+ ['調酒／沙瓦',[
+  ['KIRIN 冰結 350ml 4%',350,4],['KIRIN 冰結 500ml 4%',500,4],
+  ['冰結 STRONG 350ml 9%',350,9],['冰結 STRONG 500ml 9%',500,9],
+  ['一般罐裝沙瓦 330ml 5%',330,5],['麒麟特製 檸檬沙瓦 500ml 9%',500,9],
+  ['Strong Zero 350ml 9%',350,9],['Strong Zero 500ml 9%',500,9]]],
+ ['葡萄酒／清酒',[
+  ['葡萄酒 一杯 150ml 13%',150,13],['清酒 一合 180ml 15%',180,15]]]
+];
+var $=function(id){return document.getElementById(id);};
+var store=(function(){ try{ var k='__t'; localStorage.setItem(k,'1'); localStorage.removeItem(k); return localStorage; }catch(e){ return null; } })();
+function load(k,def){ try{ var v=store&&store.getItem(k); return v?JSON.parse(v):def; }catch(e){ return def; } }
+function save(k,v){ try{ store&&store.setItem(k,JSON.stringify(v)); }catch(e){} }
+
+// presets
+var sel=$('d'), flat=[];
+PRESETS.forEach(function(g){ var og=document.createElement('optgroup'); og.label=g[0];
+  g[1].forEach(function(p){ var o=document.createElement('option'); o.value=flat.length; o.textContent=p[0]; flat.push(p); og.appendChild(o); });
+  sel.appendChild(og); });
+var oc=document.createElement('option'); oc.value='c'; oc.textContent='✏️ 自訂（輸入 ml 與 %）'; sel.appendChild(oc);
+sel.onchange=function(){ $('custom').style.display = sel.value==='c'?'flex':'none'; };
+
+// profile
+var P=['s','a','ht','w','f'], prof=load('bac.profile',null);
+if(prof) P.forEach(function(k){ if(prof[k]!=null) $(k).value=prof[k]; });
+P.forEach(function(k){ $(k).addEventListener('input',function(){ var o={}; P.forEach(function(j){o[j]=$(j).value;}); save('bac.profile',o); render(); }); });
+function profile(){ return {sex:$('s').value, age:+$('a').value, height:+$('ht').value, weight:+$('w').value, tabs:+$('f').value}; }
+
+// log
+var drinks = load('bac.log',[]).filter(function(d){ return d && Date.now()-d.time < 24*3600000; });
+function persist(){ save('bac.log',drinks); }
+function pad(n){return (n<10?'0':'')+n;}
+function hm(t){ var d=new Date(t); return pad(d.getHours())+':'+pad(d.getMinutes()); }
+function timeFromInput(v){ // "HH:MM" → most recent such time not in the future (yesterday if needed)
+  var m=/^(\d{1,2}):(\d{2})$/.exec(v||''); if(!m) return Date.now();
+  var d=new Date(); d.setHours(+m[1],+m[2],0,0); if(d.getTime()>Date.now()+60000) d.setDate(d.getDate()-1); return d.getTime(); }
+var agoBtns=[].slice.call(document.querySelectorAll('#ago .chip'));
+function setAgo(min){ $('tm').value=hm(Date.now()-min*60000); agoBtns.forEach(function(b){ b.classList.toggle('on', +b.dataset.m===min); }); }
+agoBtns.forEach(function(b){ b.onclick=function(){ setAgo(+b.dataset.m); }; });
+$('tm').addEventListener('input',function(){ agoBtns.forEach(function(b){b.classList.remove('on');}); });
+setAgo(0);
+
+$('add').onclick=function(){
+  var name,ml,abv;
+  if(sel.value==='c'){ ml=+$('cml').value; abv=+$('cabv').value; name='自訂 '+ml+'ml '+abv+'%';
+    if(!(ml>0)||!(abv>0)||abv>100){ alert('請輸入正確的容量與酒精度'); return; } }
+  else { var p=flat[+sel.value]; name=p[0]; ml=p[1]; abv=p[2]; }
+  var q=+$('qty').value; if(!(q>0)){ alert('份數需大於 0'); return; }
+  drinks.push({id:Date.now()+Math.random(), name:name, ml:ml, abv:abv, qty:q, time:timeFromInput($('tm').value)});
+  drinks.sort(function(a,b){return a.time-b.time;}); persist(); $('qty').value=1; setAgo(0); render();
+};
+$('clear').onclick=function(){ if(confirm('確定清除全部紀錄？')){ drinks=[]; persist(); render(); } };
+
+function renderLog(){
+  var ul=$('log'); ul.innerHTML='';
+  $('clear').style.display=drinks.length?'block':'none';
+  if(!drinks.length){ ul.innerHTML='<li class="empty" style="display:block">還沒有紀錄</li>'; return; }
+  drinks.forEach(function(d){
+    var li=document.createElement('li'), g=BAC.grams(d);
+    li.innerHTML='<div class="n"></div><input type="time"><button aria-label="刪除">刪除</button>';
+    li.querySelector('.n').innerHTML='';
+    var n=li.querySelector('.n'); n.textContent=d.name+(d.qty!==1?' ×'+d.qty:'');
+    var sm=document.createElement('small'); sm.textContent='純酒精 '+g.toFixed(1)+' g'; n.appendChild(sm);
+    var ti=li.querySelector('input'); ti.value=hm(d.time);
+    ti.onchange=function(){ d.time=timeFromInput(ti.value); drinks.sort(function(a,b){return a.time-b.time;}); persist(); render(); };
+    li.querySelector('button').onclick=function(){ drinks=drinks.filter(function(x){return x!==d;}); persist(); render(); };
+    ul.appendChild(li);
+  });
+}
+function fmtH(h){ if(!(h>0)) return '現在'; var m=Math.ceil(h*60); var s=(m>=60?Math.floor(m/60)+' 小時 ':'')+(m%60?m%60+' 分':''); return s.trim(); }
+function at(h){ return h>0 ? '（約 '+hm(Date.now()+h*3600000)+'）' : ''; }
+
+function render(){
+  renderLog();
+  var now=Date.now(), r=BAC.report(profile(), drinks, now);
+  $('tbw').textContent = r.valid ? '估計身體含水量 '+r.tbw.toFixed(1)+' L' : '⚠️ 請輸入正確的身高、體重、年齡';
+  var cur=$('cur'), cls = r.bac>=BAC.LIMIT?'bad':(r.bac>0?'warn':'ok');
+  cur.className='big '+cls; cur.textContent=r.bac.toFixed(3)+' %';
+  $('curBr').textContent='呼氣約 '+r.breath.toFixed(2)+' mg/L';
+  $('curMsg').textContent = !r.valid ? '' : r.bac>=BAC.LIMIT ? '⛔ 超過酒駕標準，絕對不要開車' :
+     r.bac>0 ? '體內仍有酒精，仍建議不要開車' : (r.hoursToZero>0 ? '酒精尚在吸收中，濃度可能還會上升' : (drinks.length?'估算已代謝完畢（仍以實際狀況為準）':'尚無飲酒紀錄'));
+  $('sPeak').textContent = r.peak>0 ? r.peak.toFixed(3)+'%'+(r.peakTime>now?' 預計 ':' @')+hm(r.peakTime) : '–';
+  $('sLegal').textContent = r.hoursToLegal>0 ? fmtH(r.hoursToLegal)+' 後' : (r.peak>=BAC.LIMIT?'已低於':'未超過');
+  $('sZero').textContent = r.hoursToZero>0 ? fmtH(r.hoursToZero)+' '+at(r.hoursToZero) : '–';
+  $('sZeroC').textContent = r.hoursToZeroSlow>0 ? fmtH(r.hoursToZeroSlow)+' '+at(r.hoursToZeroSlow) : '–';
+  draw(r, now);
+}
+
+function draw(r, now){
+  var c=$('chart'), x=c.getContext&&c.getContext('2d'); if(!x) return;
+  var W=c.width, Hh=c.height, L=60, R=16, T=16, B=40; x.clearRect(0,0,W,Hh);
+  var s=r.avg.series, s2=r.slow.series;
+  if(!s.length){ x.fillStyle='#9aa'; x.font='26px sans-serif'; x.textAlign='center'; x.fillText('加入飲酒紀錄後顯示濃度變化', W/2, Hh/2); return; }
+  var t0=s[0].t, t1=Math.max(s2[s2.length-1].t, now+600000), ymax=Math.max(0.05, r.peak*1.15);
+  var X=function(t){return L+(t-t0)/(t1-t0)*(W-L-R);}, Y=function(v){return T+(1-v/ymax)*(Hh-T-B);};
+  x.font='22px sans-serif'; x.fillStyle='#889'; x.strokeStyle='#e5e8ef'; x.lineWidth=1; x.textAlign='right';
+  for(var i=0;i<=4;i++){ var v=ymax*i/4; x.beginPath(); x.moveTo(L,Y(v)); x.lineTo(W-R,Y(v)); x.stroke(); x.fillText(v.toFixed(2),L-6,Y(v)+7); }
+  x.textAlign='center'; var span=(t1-t0)/3600000, stepH=span>12?3:span>6?2:1, st=new Date(t0); st.setMinutes(0,0,0);
+  for(var tt=st.getTime(); tt<=t1; tt+=stepH*3600000){ if(tt>=t0) x.fillText(hm(tt), X(tt), Hh-10); }
+  x.strokeStyle='#d33'; x.setLineDash([8,6]); x.beginPath(); x.moveTo(L,Y(BAC.LIMIT)); x.lineTo(W-R,Y(BAC.LIMIT)); x.stroke(); x.setLineDash([]);
+  x.fillStyle='#d33'; x.textAlign='left'; x.fillText('0.03%', L+4, Y(BAC.LIMIT)-6);
+  function line(ser,col,w,dash){ x.strokeStyle=col; x.lineWidth=w; x.setLineDash(dash||[]); x.beginPath();
+    var k=Math.max(1,Math.floor(ser.length/400)); for(var i=0;i<ser.length;i+=k){ var p=ser[i]; i?x.lineTo(X(p.t),Y(p.bac)):x.moveTo(X(p.t),Y(p.bac)); }
+    var e=ser[ser.length-1]; x.lineTo(X(e.t),Y(e.bac)); x.stroke(); x.setLineDash([]); }
+  line(s2,'#a9b8e8',3,[6,6]); line(s,'#3b6ef5',4);
+  x.strokeStyle='#1d2433'; x.lineWidth=2; x.beginPath(); x.moveTo(X(now),T); x.lineTo(X(now),Hh-B); x.stroke();
+  x.fillStyle='#1d2433'; x.textAlign='center'; x.fillText('現在', Math.min(W-R-30,Math.max(L+30,X(now))), T+18);
+}
+
+render(); setInterval(render, 30000);
+document.addEventListener('visibilitychange',function(){ if(!document.hidden) render(); });
+try{ if('serviceWorker' in navigator && location.protocol!=='file:' && window.isSecureContext){
+  navigator.serviceWorker.register('sw.js').catch(function(){}); } }catch(e){}
+})();
+</script>
+</body>
+</html>
